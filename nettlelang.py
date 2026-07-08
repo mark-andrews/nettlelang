@@ -72,11 +72,19 @@ class CharTokenizer:
 
 
 class CharData:
-    """A text corpus encoded as a single long sequence of character ids."""
+    """A text corpus encoded as a single long sequence of token ids.
 
-    def __init__(self, text):
+    Defaults to a fresh character-level tokenizer built from the text
+    itself, for training a model from scratch. Pass `tokenizer=`, an
+    existing model's tokenizer such as `gpt2.tokenizer`, to encode with
+    that instead. That is what fine-tuning a pretrained model requires:
+    it must keep reading and writing the vocabulary it already knows,
+    not a new one built from this one corpus.
+    """
+
+    def __init__(self, text, tokenizer=None):
         self.text = text
-        self.tokenizer = CharTokenizer(text)
+        self.tokenizer = tokenizer or CharTokenizer(text)
         self.ids = torch.tensor(self.tokenizer.encode(text))
 
     def __repr__(self):
@@ -84,11 +92,13 @@ class CharData:
                 f"vocabulary of {len(self.tokenizer)}")
 
 
-def load_text(source="shakespeare", cache="tinyshakespeare.txt"):
+def load_text(source="shakespeare", cache="tinyshakespeare.txt", tokenizer=None):
     """Load a text corpus for character-level modelling.
 
     `source` may be "shakespeare", a URL, or a local file path.
     The Shakespeare corpus is cached locally after the first download.
+    Pass `tokenizer=` to encode with an existing model's tokenizer
+    instead of building a fresh character-level one, for fine-tuning.
     """
     if source == "shakespeare":
         if not os.path.exists(cache):
@@ -99,7 +109,7 @@ def load_text(source="shakespeare", cache="tinyshakespeare.txt"):
     else:
         with open(source, encoding="utf-8") as f:
             text = f.read()
-    return CharData(text)
+    return CharData(text, tokenizer=tokenizer)
 
 
 # ---------------------------------------------------------------------------
@@ -419,3 +429,31 @@ class Trainer:
         plt.title(f"Training {self.lm.name}")
         plt.tight_layout()
         plt.show()
+
+
+# ---------------------------------------------------------------------------
+# A different job for a pretrained transformer: classification, no training
+# ---------------------------------------------------------------------------
+
+_classifier = None
+
+
+def classify(text, labels):
+    """Score how well each of `labels` fits `text`, with no training at all.
+
+    Everything else in this module does next-token prediction, generation
+    or fine-tuning included. This is a genuinely different use of a
+    pretrained transformer: a model trained to judge whether one sentence
+    follows from another is reused to judge whether a label follows from
+    a piece of text. Scores always sum to one across the labels given,
+    so the model can never say "none of these", only "which of these is
+    most likely of the ones I was offered". The underlying model is
+    loaded once and reused on later calls, since it is a large download.
+    """
+    global _classifier
+    if _classifier is None:
+        from transformers import pipeline
+        _classifier = pipeline("zero-shot-classification",
+                               model="facebook/bart-large-mnli")
+    result = _classifier(text, labels)
+    return list(zip(result["labels"], result["scores"]))
