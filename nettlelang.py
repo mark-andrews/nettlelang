@@ -281,6 +281,34 @@ def plot_attention(lm, sentence, layer=5, head=8):
     plt.show()
 
 
+def compare_attention(lm, sentence, heads):
+    """Side-by-side heatmaps for several (layer, head) pairs, one sentence.
+
+    Most heads attend to boring things, a handful do something a human
+    would recognise. Seeing several side by side, rather than one at a
+    time, is what makes that contrast visible: same sentence, same
+    model, wildly different behaviour, purely from which head is
+    looking. `heads` is a list of (layer, head) tuples.
+    """
+    if isinstance(lm.model, CharRNN):
+        raise ValueError(f"{lm.name} is an RNN and has no attention weights")
+    ids = torch.tensor([lm.tokenizer.encode(sentence)])
+    with torch.no_grad():
+        out = lm.model(ids, output_attentions=True)
+    tokens = [lm.tokenizer.decode([i]) for i in ids[0]]
+    fig, axes = plt.subplots(1, len(heads), figsize=(5 * len(heads), 5))
+    for ax, (layer, head) in zip(axes, heads):
+        att = out.attentions[layer][0, head]
+        ax.imshow(att, cmap="viridis")
+        ax.set_xticks(range(len(tokens)))
+        ax.set_xticklabels(tokens, rotation=90)
+        ax.set_yticks(range(len(tokens)))
+        ax.set_yticklabels(tokens)
+        ax.set_title(f"layer {layer}, head {head}")
+    plt.tight_layout()
+    plt.show()
+
+
 # ---------------------------------------------------------------------------
 # Demo 6: word embeddings
 # ---------------------------------------------------------------------------
